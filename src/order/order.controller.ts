@@ -1,0 +1,22 @@
+import { Controller } from '@nestjs/common';
+import { Ctx, EventPattern, MessagePattern, Payload, RmqContext } from '@nestjs/microservices';
+import { OrderService } from './order.service';
+
+@Controller()
+export class OrderController {
+    constructor(private readonly orderService: OrderService) {}
+
+    @EventPattern('order.created')
+    async sendOrder(@Payload() mqData: any, @Ctx() context: RmqContext) {
+        const channel = context.getChannelRef();
+        const originalMsg = context.getMessage();
+
+        try {
+            await this.orderService.sendOrder(mqData);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            channel.ack(originalMsg);
+        }
+    }
+}
