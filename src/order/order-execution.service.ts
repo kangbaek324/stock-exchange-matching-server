@@ -195,6 +195,15 @@ export class OrderExecutionService {
             } else {
                 // 체결할 주문이 없다면
                 // 더이상 체결할 주문이 없거나 / 즉시 체결가능한 주문이 없는경우
+
+                if (!nextStockPrice) {
+                    const stock = await prisma.stock.findUnique({
+                        where: { id: data.stockId },
+                    });
+
+                    nextStockPrice = stock.price;
+                }
+
                 // 유저가 가진 주식 조회
                 let userStock = userStocks.get(submitOrder.accountId);
                 if (!userStock) {
@@ -231,14 +240,6 @@ export class OrderExecutionService {
                     userStocks.set(submitOrder.accountId, userStock);
 
                     userStockList.update.push(submitOrder.accountId);
-                }
-
-                if (!nextStockPrice) {
-                    const stock = await prisma.stock.findUnique({
-                        where: { id: data.stockId },
-                    });
-
-                    nextStockPrice = stock.price;
                 }
 
                 break;
