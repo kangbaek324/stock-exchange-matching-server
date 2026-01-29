@@ -6,6 +6,7 @@ import { OrderService } from './order.service';
 export class OrderController {
     constructor(private readonly orderService: OrderService) {}
 
+    // @TODO MQData 안에 담겨있는 data 정보 타입을 DTO에서 type으로 교체해야함
     @EventPattern('order.created')
     async sendOrder(@Payload() mqData: any, @Ctx() context: RmqContext) {
         const channel = context.getChannelRef();
