@@ -1,19 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { BuyDto } from './dto/buy.dto';
-import { SellDto } from './dto/sell.dto';
 import { Order, PrismaClient, TradingType, UserStock } from '@prisma/client';
 import * as utils from './utils/orders.util';
 import { handleEqualMatch, handlePartialMatch } from './utils/handleMatch';
 import { handleRemainingMatch } from './utils/handleMatch';
+import { BuyOrder } from './type/buy.type';
+import { SellOrder } from './type/sell.type';
 
 @Injectable()
 export class OrderExecutionService {
     // 체결 가능 주문 탐색
-    async findOrder(prisma: PrismaClient, data: BuyDto | SellDto, tradingType: TradingType) {
+    async findOrder(prisma: PrismaClient, data: BuyOrder | SellOrder, tradingType: TradingType) {
         const stockId = data.stockId;
         const orderType = data.orderType;
         const price = data.price;
 
+        // @TODO any
         const where: any = {
             stockId: stockId,
             tradingType: tradingType === 'buy' ? 'sell' : 'buy',
@@ -35,7 +36,7 @@ export class OrderExecutionService {
     // 체결이 끝난후 후 처리
     async finalizeTradeResult(
         prisma: PrismaClient,
-        data: BuyDto | SellDto,
+        data: BuyOrder | SellOrder,
         userStockList: { update: number[] },
         userStocks: Map<number, UserStock>,
         createMatchList,
@@ -61,7 +62,7 @@ export class OrderExecutionService {
         }
     }
 
-    async processSubmitOrder(prisma: PrismaClient, data: BuyDto | SellDto, submitOrder: Order) {
+    async processSubmitOrder(prisma: PrismaClient, data: BuyOrder | SellOrder, submitOrder: Order) {
         const tradingType = submitOrder.tradingType;
 
         let findOrder: Order, nextStockPrice: bigint;

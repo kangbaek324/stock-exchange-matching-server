@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Order, PrismaClient, TradingType } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
-import { SellDto } from './dto/sell.dto';
-import { BuyDto } from './dto/buy.dto';
 import { OrderExecutionService } from './order-execution.service';
-import { EditDto } from './dto/edit.dto';
-import { CancelDto } from './dto/cancel.dto';
 import { orderToJson } from './utils/orders.util';
+import { MqData, OrderAction } from './type/mq-data.type';
+import { BuyOrder } from './type/buy.type';
+import { CancelOrder } from './type/cancel.type';
+import { EditOrder } from './type/edit.type';
+import { SellOrder } from './type/sell.type';
 
 @Injectable()
 export class OrderService {
@@ -15,19 +16,19 @@ export class OrderService {
         private readonly orderExecutionService: OrderExecutionService,
     ) {}
 
-    async sendOrder(mqData) {
-        if (mqData.type === 'buy') {
+    async sendOrder(mqData: MqData) {
+        if (mqData.type === OrderAction.buy) {
             return await this.trade(mqData.data, 'buy');
-        } else if (mqData.type === 'sell') {
+        } else if (mqData.type === OrderAction.sell) {
             return await this.trade(mqData.data, 'sell');
-        } else if (mqData.type === 'cancel') {
+        } else if (mqData.type === OrderAction.cancel) {
             return await this.cancel(mqData.data);
-        } else if (mqData.type === 'edit') {
+        } else if (mqData.type === OrderAction.edit) {
             return await this.edit(mqData.data);
         }
     }
 
-    async trade(data: BuyDto | SellDto, tradingType: TradingType) {
+    async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
         let result;
         let accountUpdateList;
 
@@ -89,7 +90,7 @@ export class OrderService {
      * @TODO
      * 정정시 주문시 체결가능한 주식 탐색 로직 필요
      */
-    async edit(data: EditDto) {
+    async edit(data: EditOrder) {
         let order: Order, redisKey, beforeOrder;
 
         // 기존 주문 조회
@@ -124,7 +125,7 @@ export class OrderService {
         // }
     }
 
-    async cancel(data: CancelDto) {
+    async cancel(data: CancelOrder) {
         let order: Order;
 
         await this.prismaService.$transaction(async () => {
