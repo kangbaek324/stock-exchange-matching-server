@@ -74,16 +74,16 @@ export class OrderExecutionService {
         const stockId = submitOrder.stockId;
         const tradingType = submitOrder.tradingType;
 
-        let findOrder: Order, nextStockPrice: bigint;
+        let nextStockPrice: bigint;
         let createMatchList = [];
 
         // 웹소켓을 보내야 하는 계좌 리스트
         const accountUpdateList = [submitOrder.accountId];
         const isInAccountUpdateList = new Map<number, boolean>();
-
         isInAccountUpdateList.set(submitOrder.accountId, true);
 
-        let userStockList: { update: number[] } = { update: [] }; // accountId 저장
+        // Update를 마지막에 한번만 하기 위해 정보를 메모리에 저장해두는 변수
+        let userStockList: { update: number[] } = { update: [] }; // 업데이트 해야하는 accountId 저장
         let userStocks = new Map<number, UserStock>(); // accountId, userStocks 객체
 
         // 메모리에 주문 계좌의 주식 보유 현황 저장
@@ -102,7 +102,7 @@ export class OrderExecutionService {
 
         while (true) {
             // 체결할 주문 찾기
-            findOrder = await this.findOrder(tx, submitOrder, tradingType);
+            let findOrder = await this.findOrder(tx, submitOrder, tradingType);
 
             // 체결할 주문이 있다면
             if (findOrder) {
@@ -121,11 +121,11 @@ export class OrderExecutionService {
                 }
 
                 // 체결 가능한 수량
-                const submitOrderNumber = submitOrder.number - submitOrder.matchNumber;
-                const findOrderNumber = findOrder.number - findOrder.matchNumber;
+                const submitRemaining = utils.getRemaining(submitOrder);
+                const findRemaining = utils.getRemaining(findOrder);
 
                 // 체결
-                if (submitOrderNumber === findOrderNumber) {
+                if (submitRemaining === findRemaining) {
                     const order = [findOrder, submitOrder];
 
                     [userStockList, userStocks] = await handleEqualMatch(
@@ -133,14 +133,21 @@ export class OrderExecutionService {
                         submitOrder,
                         findOrder,
                         tradingType,
-                        submitOrderNumber,
-                        findOrderNumber,
+                        submitRemaining,
+                        findRemaining,
                         userStockList,
                         userStocks,
                     );
 
                     await utils.orderCompleteUpdate(tx, order);
-                    createMatchList.push(utils.createOrderMatch(submitOrder, findOrder));
+                    createMatchList.push(
+                        utils.createOrderMatch(
+                            submitOrder,
+                            findOrder,
+                            submitRemaining,
+                            findRemaining,
+                        ),
+                    );
                     nextStockPrice = findOrder.price;
 
                     if (!isInAccountUpdateList.get(findOrder.accountId)) {
@@ -150,7 +157,7 @@ export class OrderExecutionService {
                     }
 
                     break;
-                } else if (submitOrderNumber < findOrderNumber) {
+                } else if (submitRemaining < findRemaining) {
                     const order = [submitOrder];
 
                     [userStockList, userStocks] = await handleRemainingMatch(
@@ -158,16 +165,21 @@ export class OrderExecutionService {
                         submitOrder,
                         findOrder,
                         tradingType,
-                        submitOrderNumber,
+                        submitRemaining,
                         userStockList,
                         userStocks,
                     );
 
                     await utils.orderCompleteUpdate(tx, order, submitOrder.number);
                     await utils.orderMatchAndRemainderUpdate(tx, findOrder, submitOrder);
-                    createMatchList.push(utils.createOrderMatch(submitOrder, findOrder));
-                    findOrder.matchNumber =
-                        findOrder.matchNumber + (submitOrder.number - submitOrder.matchNumber);
+                    createMatchList.push(
+                        utils.createOrderMatch(
+                            submitOrder,
+                            findOrder,
+                            submitRemaining,
+                            findRemaining,
+                        ),
+                    );
 
                     nextStockPrice = findOrder.price;
 
@@ -178,18 +190,25 @@ export class OrderExecutionService {
                     }
 
                     break;
-                } else if (submitOrderNumber > findOrderNumber) {
+                } else if (submitRemaining > findRemaining) {
                     [userStockList, userStocks] = await handlePartialMatch(
                         tx,
                         submitOrder,
                         findOrder,
                         tradingType,
-                        findOrderNumber,
+                        findRemaining,
                         userStockList,
                         userStocks,
                     );
 
-                    createMatchList.push(utils.createOrderMatch(submitOrder, findOrder, true));
+                    createMatchList.push(
+                        utils.createOrderMatch(
+                            submitOrder,
+                            findOrder,
+                            submitRemaining,
+                            findRemaining,
+                        ),
+                    );
                     nextStockPrice = findOrder.price;
 
                     if (!isInAccountUpdateList.get(findOrder.accountId)) {

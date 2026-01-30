@@ -4,14 +4,19 @@ import * as utc from 'dayjs/plugin/utc';
 
 dayjs.extend(utc);
 
+// 체결 가능한 수량 계산
+export function getRemaining(order: Order) {
+    return order.number - order.matchNumber;
+}
+
 // 가진 주식의 수를 증가
 export async function userStockIncrease(
     tx: PrismaClient,
     stockId: number,
     accountId: number,
     increaseNumber: bigint,
-    userStockList: { update: number[] }, // accountId 저장
-    userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
+    userStockList: { update: number[] },
+    userStocks: Map<number, UserStock>,
     buyPrice: bigint,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const userStock = userStocks.get(accountId);
@@ -54,8 +59,8 @@ export async function userStockDecrease(
     stockId: number,
     accountId: number,
     decreaseNumber: bigint,
-    userStockList: { update: number[] }, // accountId 저장
-    userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
+    userStockList: { update: number[] },
+    userStocks: Map<number, UserStock>,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const userStock = userStocks.get(accountId);
 
@@ -83,8 +88,12 @@ export async function userStockDecrease(
 }
 
 // 체결되고 난뒤 잔여 수량 업데이트
-export async function orderMatchAndRemainderUpdate(prisma, remainderOrder, completeOrder) {
-    await prisma.order.update({
+export async function orderMatchAndRemainderUpdate(
+    tx: PrismaClient,
+    remainderOrder: Order,
+    completeOrder: Order,
+) {
+    await tx.order.update({
         where: {
             id: remainderOrder.id,
         },
@@ -206,24 +215,18 @@ export async function stockPriceUpdate(tx: PrismaClient, stockId: number, update
 export function createOrderMatch(
     submitOrder: Order,
     findOrder: Order,
-    isFindOrderBigger?: boolean,
+    submitOrderNumber: bigint,
+    findOrderNumber: bigint,
 ) {
-    const stockId = submitOrder.stockId;
+    let orderMatch = {
+        stockId: submitOrder.stockId,
+        number: 0n,
+        initialOrderId: findOrder.id,
+        orderId: submitOrder.id,
+    };
 
-    // 3번째 경우의 수: 제출한 주문의 수가 더 클때, 찾은 주문의 수가 모두 체결된것이기에 찾은 주문을 기준으로 number를 맞춰야 함
-    if (isFindOrderBigger) {
-        return {
-            stockId: stockId,
-            number: findOrder.number - findOrder.matchNumber,
-            initialOrderId: findOrder.id,
-            orderId: submitOrder.id,
-        };
-    } else {
-        return {
-            stockId: stockId,
-            number: submitOrder.number - submitOrder.matchNumber,
-            initialOrderId: findOrder.id,
-            orderId: submitOrder.id,
-        };
-    }
+    if (submitOrderNumber < findOrderNumber) orderMatch.number = submitOrderNumber;
+    else orderMatch.number = findOrderNumber;
+
+    return orderMatch;
 }
