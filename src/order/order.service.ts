@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Order, PrismaClient, TradingType } from '@prisma/client';
+import { Order, OrderStatus, OrderType, PrismaClient, TradingType } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
-import { SellDto } from './dto/sell.dto';
-import { BuyDto } from './dto/buy.dto';
 import { OrderExecutionService } from './order-execution.service';
-import { EditDto } from './dto/edit.dto';
-import { CancelDto } from './dto/cancel.dto';
-import { orderToJson } from './utils/orders.util';
+import { MqData, OrderAction } from './type/mq-data.type';
+import { BuyOrder } from './type/buy.type';
+import { CancelOrder } from './type/cancel.type';
+import { EditOrder } from './type/edit.type';
+import { SellOrder } from './type/sell.type';
 
 @Injectable()
 export class OrderService {
@@ -15,35 +15,37 @@ export class OrderService {
         private readonly orderExecutionService: OrderExecutionService,
     ) {}
 
-    async sendOrder(mqData) {
-        if (mqData.type === 'buy') {
+    async sendOrder(mqData: MqData) {
+        if (mqData.type === OrderAction.buy) {
             return await this.trade(mqData.data, 'buy');
-        } else if (mqData.type === 'sell') {
+        } else if (mqData.type === OrderAction.sell) {
             return await this.trade(mqData.data, 'sell');
-        } else if (mqData.type === 'cancel') {
+        } else if (mqData.type === OrderAction.cancel) {
             return await this.cancel(mqData.data);
-        } else if (mqData.type === 'edit') {
+        } else if (mqData.type === OrderAction.edit) {
             return await this.edit(mqData.data);
         }
     }
 
-    async trade(data: BuyDto | SellDto, tradingType: TradingType) {
-        let result;
-        let accountUpdateList;
+    // 매수, 매도
+    async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
+        let accountUpdateList: number[];
 
         await this.prismaService.$transaction(async (prisma: PrismaClient) => {
-            // 계좌 ID 조회
-            const account = await prisma.account.findUnique({
-                where: { accountNumber: data.accountNumber },
-                select: { id: true },
-            });
+            const accountId = (
+                await prisma.account.findUnique({
+                    where: { accountNumber: data.accountNumber },
+                    select: { id: true },
+                })
+            ).id;
 
-            if (data.orderType == 'market') data.price = 0;
+            // 시장가 주문일 경우 0원으로 통일
+            if (data.orderType == OrderType.market) data.price = 0;
 
             // 주문 생성
             let submitOrder = await prisma.order.create({
                 data: {
-                    accountId: account.id,
+                    accountId: accountId,
                     stockId: data.stockId,
                     price: data.price,
                     number: data.number,
@@ -85,26 +87,11 @@ export class OrderService {
         // }
     }
 
-    /**
-     * @TODO
-     * 정정시 주문시 체결가능한 주식 탐색 로직 필요
-     */
-    async edit(data: EditDto) {
-        let order: Order, redisKey, beforeOrder;
+    // @TODO 정정시 주문시 체결가능한 주식 탐색 로직 필요
+    // 주문 정정
+    async edit(data: EditOrder) {
+        let order: Order;
 
-        // 기존 주문 조회
-        order = await this.prismaService.order.findUnique({
-            where: { id: data.orderId },
-        });
-
-        redisKey =
-            order.tradingType == 'buy'
-                ? `orderbook:${order.stockId}:buy`
-                : `orderbook:${order.stockId}:sell`;
-
-        beforeOrder = orderToJson(order);
-
-        // 주문 정정 (DB)
         order = await this.prismaService.order.update({
             data: {
                 price: data.price,
@@ -124,19 +111,14 @@ export class OrderService {
         // }
     }
 
-    async cancel(data: CancelDto) {
+    // 주문 취소
+    async cancel(data: CancelOrder) {
         let order: Order;
 
         await this.prismaService.$transaction(async () => {
-            // 주문 조회
-            order = await this.prismaService.order.findFirst({
-                where: { id: data.orderId },
-            });
-
-            // 주문 취소 (DB)
             order = await this.prismaService.order.update({
                 data: {
-                    status: 'c',
+                    status: OrderStatus.c,
                 },
                 where: {
                     id: data.orderId,
@@ -145,13 +127,6 @@ export class OrderService {
 
             // 매도 주문일 경우 가능수량 수정
             if (order.tradingType == 'sell') {
-                const userStock = await this.prismaService.userStock.findFirst({
-                    where: {
-                        stockId: order.stockId,
-                        accountId: order.accountId,
-                    },
-                });
-
                 await this.prismaService.userStock.update({
                     where: {
                         accountId_stockId: {
@@ -160,7 +135,9 @@ export class OrderService {
                         },
                     },
                     data: {
-                        canNumber: userStock.canNumber + order.number - order.matchNumber,
+                        canNumber: {
+                            increment: order.number - order.matchNumber,
+                        },
                     },
                 });
             }

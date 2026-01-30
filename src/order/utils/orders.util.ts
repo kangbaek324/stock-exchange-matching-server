@@ -6,17 +6,6 @@ dayjs.extend(utc);
 
 /**
  *
- * @param order
- * @returns Json으로 변환된 order을 반환
- */
-export function orderToJson(order) {
-    return JSON.stringify(order, (_, value) =>
-        typeof value === 'bigint' ? value.toString() : value,
-    );
-}
-
-/**
- *
  * @param prisma
  * @param stockId
  * @param accountId
@@ -87,7 +76,6 @@ export async function userStockDecrease(
     decreaseNumber: bigint,
     userStockList: { update: number[] }, // accountId 저장
     userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
-    isFindOrder: boolean,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const userStock = userStocks.get(accountId);
 
@@ -105,7 +93,6 @@ export async function userStockDecrease(
         userStocks.set(accountId, {
             ...userStock,
             number: userStock.number - decreaseNumber,
-            canNumber: isFindOrder ? userStock.canNumber : userStock.canNumber - decreaseNumber,
             totalBuyAmount: userStock.totalBuyAmount - userStock.average * decreaseNumber,
         });
 

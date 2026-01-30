@@ -17,7 +17,7 @@ enum TradingType {
   sell
 }
 
-enum status {
+enum OrderStatus {
   y
   n
   c
@@ -75,7 +75,7 @@ model StockHistory {
   stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
   @@id([stockId, date])
-  @@map("stock_history")
+  @@map("stock_histories")
 }
 
 model UserStock {
@@ -94,22 +94,24 @@ model UserStock {
 }
 
 model Order {
-  id          Int         @id @default(autoincrement())
-  accountId   Int         @map("account_id")
-  stockId     Int         @map("stock_id")
+  id          Int          @id @default(autoincrement())
+  accountId   Int          @map("account_id")
+  stockId     Int          @map("stock_id")
   price       BigInt
   number      BigInt
-  matchNumber BigInt?     @default(0) @map("match_number")
-  orderType   OrderType   @map("order_type")
-  status      status?     @default(n)
-  tradingType TradingType @map("trading_type")
-  createdAt   DateTime    @default(now()) @map("created_at")
+  matchNumber BigInt?      @default(0) @map("match_number")
+  orderType   OrderType    @map("order_type")
+  status      OrderStatus? @default(n)
+  tradingType TradingType  @map("trading_type")
+  createdAt   DateTime     @default(now()) @map("created_at")
 
   orderMatchA OrderMatch[] @relation("OrderAsInitial")
   orderMatchB OrderMatch[] @relation("OrderAsMatched")
 
   accounts Account @relation(fields: [accountId], references: [id])
   stocks   Stock   @relation(fields: [stockId], references: [id])
+
+  @@map("orders")
 }
 
 model OrderMatch {
@@ -124,5 +126,5 @@ model OrderMatch {
   orderA Order @relation("OrderAsInitial", fields: [initialOrderId], references: [id])
   orderB Order @relation("OrderAsMatched", fields: [orderId], references: [id])
 
-  @@map("order_match")
+  @@map("order_matches")
 }

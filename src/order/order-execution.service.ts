@@ -1,19 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { BuyDto } from './dto/buy.dto';
-import { SellDto } from './dto/sell.dto';
 import { Order, PrismaClient, TradingType, UserStock } from '@prisma/client';
 import * as utils from './utils/orders.util';
 import { handleEqualMatch, handlePartialMatch } from './utils/handleMatch';
 import { handleRemainingMatch } from './utils/handleMatch';
+import { BuyOrder } from './type/buy.type';
+import { SellOrder } from './type/sell.type';
 
 @Injectable()
 export class OrderExecutionService {
     // 체결 가능 주문 탐색
-    async findOrder(prisma: PrismaClient, data: BuyDto | SellDto, tradingType: TradingType) {
+    async findOrder(prisma: PrismaClient, data: BuyOrder | SellOrder, tradingType: TradingType) {
         const stockId = data.stockId;
         const orderType = data.orderType;
         const price = data.price;
 
+        // @TODO any
         const where: any = {
             stockId: stockId,
             tradingType: tradingType === 'buy' ? 'sell' : 'buy',
@@ -35,7 +36,7 @@ export class OrderExecutionService {
     // 체결이 끝난후 후 처리
     async finalizeTradeResult(
         prisma: PrismaClient,
-        data: BuyDto | SellDto,
+        data: BuyOrder | SellOrder,
         userStockList: { update: number[] },
         userStocks: Map<number, UserStock>,
         createMatchList,
@@ -61,7 +62,7 @@ export class OrderExecutionService {
         }
     }
 
-    async processSubmitOrder(prisma: PrismaClient, data: BuyDto | SellDto, submitOrder: Order) {
+    async processSubmitOrder(prisma: PrismaClient, data: BuyOrder | SellOrder, submitOrder: Order) {
         const tradingType = submitOrder.tradingType;
 
         let findOrder: Order, nextStockPrice: bigint;
@@ -204,25 +205,11 @@ export class OrderExecutionService {
                     nextStockPrice = stock.price;
                 }
 
-                // 유저가 가진 주식 조회
-                let userStock = userStocks.get(submitOrder.accountId);
-                if (!userStock) {
-                    userStock = await prisma.userStock.findUnique({
-                        where: {
-                            accountId_stockId: {
-                                accountId: submitOrder.accountId,
-                                stockId: submitOrder.stockId,
-                            },
-                        },
-                    });
-                }
-
                 // 시장가 주문중 미체결이 있는 경우
                 if (
-                    submitOrder.number != submitOrder.matchNumber &&
+                    submitOrder.number !== submitOrder.matchNumber &&
                     submitOrder.orderType == 'market'
                 ) {
-                    // DB 취소
                     await prisma.order.update({
                         where: { id: submitOrder.id },
                         data: {
@@ -230,16 +217,21 @@ export class OrderExecutionService {
                         },
                     });
 
-                    break;
-                }
-
-                // 매도 주문시 가능수량 업데이트
-                if (tradingType == 'sell') {
-                    userStock.canNumber =
-                        userStock.canNumber - (submitOrder.number - submitOrder.matchNumber);
-                    userStocks.set(submitOrder.accountId, userStock);
-
-                    userStockList.update.push(submitOrder.accountId);
+                    if (submitOrder.tradingType === 'sell') {
+                        await prisma.userStock.update({
+                            where: {
+                                accountId_stockId: {
+                                    accountId: submitOrder.accountId,
+                                    stockId: submitOrder.stockId,
+                                },
+                            },
+                            data: {
+                                canNumber: {
+                                    increment: submitOrder.number - submitOrder.matchNumber,
+                                },
+                            },
+                        });
+                    }
                 }
 
                 break;
