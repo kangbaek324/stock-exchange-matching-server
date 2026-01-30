@@ -21,7 +21,7 @@ export async function handleEqualMatch(
     const decreaseNumber = findOrderNumber;
 
     // 잔고 수정
-    if (tradingType == 'buy') {
+    if (tradingType === TradingType.buy) {
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
             submitOrder.stockId,
@@ -78,7 +78,7 @@ export async function handleRemainingMatch(
     const decreaseNumber = submitOrderNumber;
 
     // 잔고 수정
-    if (tradingType == 'buy') {
+    if (tradingType === TradingType.buy) {
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
             submitOrder.stockId,
@@ -136,7 +136,7 @@ export async function handlePartialMatch(
     const decreaseNumber = findOrderNumber;
 
     // 잔고 수정
-    if (tradingType == 'buy') {
+    if (tradingType === TradingType.buy) {
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
             submitOrder.stockId,

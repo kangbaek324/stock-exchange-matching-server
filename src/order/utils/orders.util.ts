@@ -1,22 +1,12 @@
-import { PrismaClient, UserStock } from '@prisma/client';
+import { Order, OrderStatus, PrismaClient, UserStock } from '@prisma/client';
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 
 dayjs.extend(utc);
 
-/**
- *
- * @param prisma
- * @param stockId
- * @param accountId
- * @param increaseNumber
- * @param userStockList
- * @param userStocks
- * @param buyPrice
- * @returns userStockList, userStocks를 담은 배열로 반환
- */
+// 가진 주식의 수를 증가
 export async function userStockIncrease(
-    prisma: PrismaClient,
+    tx: PrismaClient,
     stockId: number,
     accountId: number,
     increaseNumber: bigint,
@@ -30,7 +20,7 @@ export async function userStockIncrease(
     if (!userStock) {
         userStocks.set(
             accountId,
-            await prisma.userStock.create({
+            await tx.userStock.create({
                 data: {
                     accountId: accountId,
                     stockId: stockId,
@@ -58,19 +48,9 @@ export async function userStockIncrease(
     return [userStockList, userStocks];
 }
 
-/**
- *
- * @param prisma
- * @param stockId
- * @param accountId
- * @param decreaseNumber
- * @param userStockList
- * @param userStocks
- * @param isFindOrder
- * @returns userStockList, userStocks를 담은 배열로 반환
- */
+// 가진 주식의 수를 감소
 export async function userStockDecrease(
-    prisma: PrismaClient,
+    tx: PrismaClient,
     stockId: number,
     accountId: number,
     decreaseNumber: bigint,
@@ -80,8 +60,8 @@ export async function userStockDecrease(
     const userStock = userStocks.get(accountId);
 
     // 더 이상 보유 수량이 없을때
-    if (userStock.number - decreaseNumber == 0n) {
-        await prisma.userStock.delete({
+    if (userStock.number - decreaseNumber === 0n) {
+        await tx.userStock.delete({
             where: {
                 accountId_stockId: {
                     accountId: accountId,
@@ -102,12 +82,7 @@ export async function userStockDecrease(
     return [userStockList, userStocks];
 }
 
-/**
- * 체결되고 난뒤 잔여 수량 업데이트
- * @param prisma
- * @param remainderOrder
- * @param completeOrder
- */
+// 체결되고 난뒤 잔여 수량 업데이트
 export async function orderMatchAndRemainderUpdate(prisma, remainderOrder, completeOrder) {
     await prisma.order.update({
         where: {
@@ -120,16 +95,9 @@ export async function orderMatchAndRemainderUpdate(prisma, remainderOrder, compl
     });
 }
 
-/**
- *  * 주문 상태 업데이트
- *
- * 배열의 크기는 최소1개 최대 2개
- * 주문이 한가지일 경우에는 number에 업데이트될 수량을 매게변수로 받음
- *
- * @param prisma
- * @param orders
- * @param number
- */
+// 주문 상태 업데이트
+// 배열의 크기는 최소1개 최대 2개
+// 주문이 한가지일 경우에는 number에 업데이트될 수량을 매게변수로 받음
 export async function orderCompleteUpdate(prisma: PrismaClient, orders, number?: bigint) {
     if (orders.length == 2) {
         for (let i = 0; i < orders.length; i++) {
@@ -138,7 +106,7 @@ export async function orderCompleteUpdate(prisma: PrismaClient, orders, number?:
                     id: orders[i].id,
                 },
                 data: {
-                    status: 'y',
+                    status: OrderStatus.y,
                     matchNumber: orders[i].number,
                 },
             });
@@ -149,42 +117,39 @@ export async function orderCompleteUpdate(prisma: PrismaClient, orders, number?:
                 id: orders[0].id,
             },
             data: {
-                status: 'y',
+                status: OrderStatus.y,
                 matchNumber: number,
             },
         });
     } else throw new Error('올바르지 않은 배열 크기입니다');
 }
 
-/**
- *
- * 체결된 가격으로 주식가격 업데이트
- * @param prisma
- * @param data
- * @param updatePrice
- */
-export async function stockPriceUpdate(prisma: PrismaClient, data, updatePrice) {
-    await prisma.stock.update({
-        where: { id: data.stockId },
+// 주식 가격 업데이트
+export async function stockPriceUpdate(tx: PrismaClient, stockId: number, updatePrice: bigint) {
+    // 주식 가격 업데이트
+    await tx.stock.update({
+        where: { id: stockId },
         data: {
             price: updatePrice,
         },
     });
 
+    // 당일 날짜 조회 및 당일 가격 정보 조회
     const today = dayjs().utc().format('YYYY-MM-DD');
-    const stockHistory = await prisma.stockHistory.findUnique({
+    const stockHistory = await tx.stockHistory.findUnique({
         where: {
             stockId_date: {
-                stockId: data.stockId,
+                stockId: stockId,
                 date: new Date(today),
             },
         },
     });
 
+    // 당일 가격 정보 업데이트
     if (!stockHistory) {
-        await prisma.stockHistory.create({
+        await tx.stockHistory.create({
             data: {
-                stockId: data.stockId,
+                stockId: stockId,
                 date: new Date(today),
                 low: updatePrice,
                 high: updatePrice,
@@ -193,11 +158,12 @@ export async function stockPriceUpdate(prisma: PrismaClient, data, updatePrice) 
             },
         });
     } else {
+        // 당일 저가 업데이트
         if (stockHistory.low > updatePrice) {
-            await prisma.stockHistory.update({
+            await tx.stockHistory.update({
                 where: {
                     stockId_date: {
-                        stockId: data.stockId,
+                        stockId: stockId,
                         date: new Date(today),
                     },
                 },
@@ -206,11 +172,13 @@ export async function stockPriceUpdate(prisma: PrismaClient, data, updatePrice) 
                 },
             });
         }
+
+        // 당일 고가 업데이트
         if (stockHistory.high < updatePrice) {
-            await prisma.stockHistory.update({
+            await tx.stockHistory.update({
                 where: {
                     stockId_date: {
-                        stockId: data.stockId,
+                        stockId: stockId,
                         date: new Date(today),
                     },
                 },
@@ -220,10 +188,11 @@ export async function stockPriceUpdate(prisma: PrismaClient, data, updatePrice) 
             });
         }
 
-        await prisma.stockHistory.update({
+        // 당일 종가 업데이트
+        await tx.stockHistory.update({
             where: {
                 stockId_date: {
-                    stockId: data.stockId,
+                    stockId: stockId,
                     date: new Date(today),
                 },
             },
@@ -234,18 +203,24 @@ export async function stockPriceUpdate(prisma: PrismaClient, data, updatePrice) 
     }
 }
 
-export function createOrderMatch(data, submitOrder, findOrder, isFindOrderBigger?: boolean) {
+export function createOrderMatch(
+    submitOrder: Order,
+    findOrder: Order,
+    isFindOrderBigger?: boolean,
+) {
+    const stockId = submitOrder.stockId;
+
     // 3번째 경우의 수: 제출한 주문의 수가 더 클때, 찾은 주문의 수가 모두 체결된것이기에 찾은 주문을 기준으로 number를 맞춰야 함
     if (isFindOrderBigger) {
         return {
-            stockId: data.stockId,
+            stockId: stockId,
             number: findOrder.number - findOrder.matchNumber,
             initialOrderId: findOrder.id,
             orderId: submitOrder.id,
         };
     } else {
         return {
-            stockId: data.stockId,
+            stockId: stockId,
             number: submitOrder.number - submitOrder.matchNumber,
             initialOrderId: findOrder.id,
             orderId: submitOrder.id,
