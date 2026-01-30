@@ -87,7 +87,6 @@ export async function userStockDecrease(
     decreaseNumber: bigint,
     userStockList: { update: number[] }, // accountId 저장
     userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
-    isFindOrder: boolean,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const userStock = userStocks.get(accountId);
 
@@ -105,7 +104,6 @@ export async function userStockDecrease(
         userStocks.set(accountId, {
             ...userStock,
             number: userStock.number - decreaseNumber,
-            canNumber: isFindOrder ? userStock.canNumber : userStock.canNumber - decreaseNumber,
             totalBuyAmount: userStock.totalBuyAmount - userStock.average * decreaseNumber,
         });
 

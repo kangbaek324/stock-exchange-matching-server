@@ -205,25 +205,11 @@ export class OrderExecutionService {
                     nextStockPrice = stock.price;
                 }
 
-                // 유저가 가진 주식 조회
-                let userStock = userStocks.get(submitOrder.accountId);
-                if (!userStock) {
-                    userStock = await prisma.userStock.findUnique({
-                        where: {
-                            accountId_stockId: {
-                                accountId: submitOrder.accountId,
-                                stockId: submitOrder.stockId,
-                            },
-                        },
-                    });
-                }
-
                 // 시장가 주문중 미체결이 있는 경우
                 if (
-                    submitOrder.number != submitOrder.matchNumber &&
+                    submitOrder.number !== submitOrder.matchNumber &&
                     submitOrder.orderType == 'market'
                 ) {
-                    // DB 취소
                     await prisma.order.update({
                         where: { id: submitOrder.id },
                         data: {
@@ -231,16 +217,21 @@ export class OrderExecutionService {
                         },
                     });
 
-                    break;
-                }
-
-                // 매도 주문시 가능수량 업데이트
-                if (tradingType == 'sell') {
-                    userStock.canNumber =
-                        userStock.canNumber - (submitOrder.number - submitOrder.matchNumber);
-                    userStocks.set(submitOrder.accountId, userStock);
-
-                    userStockList.update.push(submitOrder.accountId);
+                    if (submitOrder.tradingType === 'sell') {
+                        await prisma.userStock.update({
+                            where: {
+                                accountId_stockId: {
+                                    accountId: submitOrder.accountId,
+                                    stockId: submitOrder.stockId,
+                                },
+                            },
+                            data: {
+                                canNumber: {
+                                    increment: submitOrder.number - submitOrder.matchNumber,
+                                },
+                            },
+                        });
+                    }
                 }
 
                 break;

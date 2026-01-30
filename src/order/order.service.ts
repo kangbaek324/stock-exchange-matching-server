@@ -29,7 +29,6 @@ export class OrderService {
     }
 
     async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
-        let result;
         let accountUpdateList;
 
         await this.prismaService.$transaction(async (prisma: PrismaClient) => {

@@ -39,7 +39,6 @@ export async function handleEqualMatch(
             decreaseNumber,
             userStockList,
             userStocks,
-            true,
         );
     } else {
         [userStockList, userStocks] = await userStockDecrease(
@@ -49,7 +48,6 @@ export async function handleEqualMatch(
             decreaseNumber,
             userStockList,
             userStocks,
-            false,
         );
 
         [userStockList, userStocks] = await userStockIncrease(
@@ -98,7 +96,6 @@ export async function handleRemainingMatch(
             decreaseNumber,
             userStockList,
             userStocks,
-            true,
         );
     } else {
         [userStockList, userStocks] = await userStockDecrease(
@@ -108,7 +105,6 @@ export async function handleRemainingMatch(
             decreaseNumber,
             userStockList,
             userStocks,
-            false,
         );
 
         [userStockList, userStocks] = await userStockIncrease(
@@ -158,7 +154,6 @@ export async function handlePartialMatch(
             decreaseNumber,
             userStockList,
             userStocks,
-            true,
         );
     } else {
         [userStockList, userStocks] = await userStockDecrease(
@@ -168,7 +163,6 @@ export async function handlePartialMatch(
             decreaseNumber,
             userStockList,
             userStocks,
-            false,
         );
 
         [userStockList, userStocks] = await userStockIncrease(
