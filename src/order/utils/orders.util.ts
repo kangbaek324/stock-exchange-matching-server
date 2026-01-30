@@ -6,17 +6,6 @@ dayjs.extend(utc);
 
 /**
  *
- * @param order
- * @returns Json으로 변환된 order을 반환
- */
-export function orderToJson(order) {
-    return JSON.stringify(order, (_, value) =>
-        typeof value === 'bigint' ? value.toString() : value,
-    );
-}
-
-/**
- *
  * @param prisma
  * @param stockId
  * @param accountId
