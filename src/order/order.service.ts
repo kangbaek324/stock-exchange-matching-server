@@ -31,19 +31,19 @@ export class OrderService {
     async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
         let accountUpdateList: number[];
 
-        await this.prismaService.$transaction(async (prisma: PrismaClient) => {
+        await this.prismaService.$transaction(async (tx: PrismaClient) => {
             const accountId = (
-                await prisma.account.findUnique({
+                await tx.account.findUnique({
                     where: { accountNumber: data.accountNumber },
                     select: { id: true },
                 })
             ).id;
 
             // 시장가 주문일 경우 0원으로 통일
-            if (data.orderType == OrderType.market) data.price = 0;
+            if (data.orderType == OrderType.market) data.price = 0n;
 
             // 주문 생성
-            let submitOrder = await prisma.order.create({
+            const submitOrder = await tx.order.create({
                 data: {
                     accountId: accountId,
                     stockId: data.stockId,
@@ -56,8 +56,7 @@ export class OrderService {
 
             // 체결 가능 주문 탐색
             accountUpdateList = await this.orderExecutionService.processSubmitOrder(
-                prisma,
-                data,
+                tx,
                 submitOrder,
             );
         });

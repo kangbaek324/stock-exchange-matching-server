@@ -14,18 +14,22 @@ export async function handleEqualMatch(
     tradingType: TradingType,
     submitOrderNumber: bigint,
     findOrderNumber: bigint,
-    userStockList: { update: number[] }, // accountId 저장
-    userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
+    userStockList: { update: number[] },
+    userStocks: Map<number, UserStock>,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const increaseNumber = submitOrderNumber;
     const decreaseNumber = findOrderNumber;
 
+    const stockId = submitOrder.stockId;
+    const submitOrderAccountId = submitOrder.accountId;
+    const findOrderAccountId = findOrder.accountId;
+
     // 잔고 수정
-    if (tradingType == 'buy') {
+    if (tradingType === TradingType.buy) {
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
-            submitOrder.stockId,
-            submitOrder.accountId,
+            stockId,
+            submitOrderAccountId,
             increaseNumber,
             userStockList,
             userStocks,
@@ -34,8 +38,8 @@ export async function handleEqualMatch(
 
         [userStockList, userStocks] = await userStockDecrease(
             prisma,
-            findOrder.stockId,
-            findOrder.accountId,
+            stockId,
+            findOrderAccountId,
             decreaseNumber,
             userStockList,
             userStocks,
@@ -43,8 +47,8 @@ export async function handleEqualMatch(
     } else {
         [userStockList, userStocks] = await userStockDecrease(
             prisma,
-            submitOrder.stockId,
-            submitOrder.accountId,
+            stockId,
+            submitOrderAccountId,
             decreaseNumber,
             userStockList,
             userStocks,
@@ -52,8 +56,8 @@ export async function handleEqualMatch(
 
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
-            findOrder.stockId,
-            findOrder.accountId,
+            stockId,
+            findOrderAccountId,
             increaseNumber,
             userStockList,
             userStocks,
@@ -71,18 +75,22 @@ export async function handleRemainingMatch(
     findOrder: Order,
     tradingType: TradingType,
     submitOrderNumber: bigint,
-    userStockList: { update: number[] }, // accountId 저장
-    userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
+    userStockList: { update: number[] },
+    userStocks: Map<number, UserStock>,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const increaseNumber = submitOrderNumber;
     const decreaseNumber = submitOrderNumber;
 
+    const stockId = submitOrder.stockId;
+    const submitOrderAccountId = submitOrder.accountId;
+    const findOrderAccountId = findOrder.accountId;
+
     // 잔고 수정
-    if (tradingType == 'buy') {
+    if (tradingType === TradingType.buy) {
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
-            submitOrder.stockId,
-            submitOrder.accountId,
+            stockId,
+            submitOrderAccountId,
             increaseNumber,
             userStockList,
             userStocks,
@@ -91,8 +99,8 @@ export async function handleRemainingMatch(
 
         [userStockList, userStocks] = await userStockDecrease(
             prisma,
-            findOrder.stockId,
-            findOrder.accountId,
+            stockId,
+            findOrderAccountId,
             decreaseNumber,
             userStockList,
             userStocks,
@@ -100,8 +108,8 @@ export async function handleRemainingMatch(
     } else {
         [userStockList, userStocks] = await userStockDecrease(
             prisma,
-            submitOrder.stockId,
-            submitOrder.accountId,
+            stockId,
+            submitOrderAccountId,
             decreaseNumber,
             userStockList,
             userStocks,
@@ -109,8 +117,8 @@ export async function handleRemainingMatch(
 
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
-            findOrder.stockId,
-            findOrder.accountId,
+            stockId,
+            findOrderAccountId,
             increaseNumber,
             userStockList,
             userStocks,
@@ -128,19 +136,23 @@ export async function handlePartialMatch(
     findOrder: Order,
     tradingType: TradingType,
     findOrderNumber: bigint,
-    userStockList: { update: number[] }, // accountId 저장
-    userStocks: Map<number, UserStock>, // accountId, user_stocks 객체
+    userStockList: { update: number[] },
+    userStocks: Map<number, UserStock>,
 ): Promise<[{ update: number[] }, Map<number, UserStock>]> {
     const order = [findOrder];
     const increaseNumber = findOrderNumber;
     const decreaseNumber = findOrderNumber;
 
+    const stockId = submitOrder.stockId;
+    const submitOrderAccountId = submitOrder.accountId;
+    const findOrderAccountId = findOrder.accountId;
+
     // 잔고 수정
-    if (tradingType == 'buy') {
+    if (tradingType === TradingType.buy) {
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
-            submitOrder.stockId,
-            submitOrder.accountId,
+            stockId,
+            submitOrderAccountId,
             increaseNumber,
             userStockList,
             userStocks,
@@ -149,8 +161,8 @@ export async function handlePartialMatch(
 
         [userStockList, userStocks] = await userStockDecrease(
             prisma,
-            findOrder.stockId,
-            findOrder.accountId,
+            stockId,
+            findOrderAccountId,
             decreaseNumber,
             userStockList,
             userStocks,
@@ -158,8 +170,8 @@ export async function handlePartialMatch(
     } else {
         [userStockList, userStocks] = await userStockDecrease(
             prisma,
-            submitOrder.stockId,
-            submitOrder.accountId,
+            stockId,
+            submitOrderAccountId,
             decreaseNumber,
             userStockList,
             userStocks,
@@ -167,8 +179,8 @@ export async function handlePartialMatch(
 
         [userStockList, userStocks] = await userStockIncrease(
             prisma,
-            findOrder.stockId,
-            findOrder.accountId,
+            stockId,
+            findOrderAccountId,
             increaseNumber,
             userStockList,
             userStocks,
