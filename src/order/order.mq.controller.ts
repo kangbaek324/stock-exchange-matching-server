@@ -4,7 +4,7 @@ import { OrderService } from './order.service';
 import { MqData } from './type/mq-data.type';
 
 @Controller()
-export class OrderController {
+export class OrderMqController {
     constructor(private readonly orderService: OrderService) {}
 
     @EventPattern('order.created')

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Order, OrderStatus, OrderType, PrismaClient, TradingType } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
 import { OrderExecutionService } from './order-execution.service';
@@ -7,10 +7,12 @@ import { BuyOrder } from './type/buy.type';
 import { CancelOrder } from './type/cancel.type';
 import { EditOrder } from './type/edit.type';
 import { SellOrder } from './type/sell.type';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class OrderService {
     constructor(
+        @Inject('ORDER_SERVICE') private client: ClientProxy,
         private readonly prismaService: PrismaService,
         private readonly orderExecutionService: OrderExecutionService,
     ) {}
@@ -29,7 +31,7 @@ export class OrderService {
 
     // 매수, 매도
     async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
-        let accountUpdateList: number[];
+        let updatedOrderIds: number[];
 
         await this.prismaService.$transaction(async (tx: PrismaClient) => {
             const accountId = (
@@ -55,59 +57,38 @@ export class OrderService {
             });
 
             // 체결 가능 주문 탐색
-            accountUpdateList = await this.orderExecutionService.processSubmitOrder(
-                tx,
-                submitOrder,
-            );
+            updatedOrderIds = await this.orderExecutionService.processSubmitOrder(tx, submitOrder);
         });
 
-        // try {
-        //     // 주식 가격 전송
-        //     await this.websocket.stockUpdate(data.stockId);
-
-        //     // 계좌, 주문 현황 업데이트 사항 전송 (웹소켓)
-        //     for (const accountId of accountUpdateList) {
-        //         await this.websocket.accountUpdate(accountId);
-        //         await this.websocket.orderStatus(accountId);
-        //     }
-
-        //     // 주식을 보유한 사람들의 잔고 업데이트
-        //     const userStocks = await this.prismaService.userStock.findMany({
-        //         where: {
-        //             stockId: data.stockId,
-        //         },
-        //     });
-
-        //     for (let i = 0; i < userStocks.length; i++) {
-        //         await this.websocket.accountUpdate(userStocks[i].accountId);
-        //     }
-        // } catch (err) {
-        //     console.error('웹소켓 전송오류' + err);
-        // }
+        this.client.emit('order.evented', {
+            stockId: data.stockId,
+            updatedOrderIds: updatedOrderIds,
+        });
     }
 
     // @TODO 정정시 주문시 체결가능한 주식 탐색 로직 필요
     // 주문 정정
     async edit(data: EditOrder) {
         let order: Order;
+        let updatedOrderIds: number[];
 
-        order = await this.prismaService.order.update({
-            data: {
-                price: data.price,
-            },
-            where: {
-                id: data.orderId,
-            },
+        await this.prismaService.$transaction(async (tx: PrismaClient) => {
+            order = await this.prismaService.order.update({
+                data: {
+                    price: data.price,
+                },
+                where: {
+                    id: data.orderId,
+                },
+            });
+
+            updatedOrderIds = await this.orderExecutionService.processSubmitOrder(tx, order);
         });
 
-        // 웹소켓 전송
-        // try {
-        //     await this.websocket.stockUpdate(order.stockId);
-        //     await this.websocket.accountUpdate(order.accountId);
-        //     await this.websocket.orderStatus(order.accountId);
-        // } catch (err) {
-        //     console.error('웹소켓 전송오류' + err);
-        // }
+        this.client.emit('order.evented', {
+            stockId: order.stockId,
+            updatedOrderIds: updatedOrderIds,
+        });
     }
 
     // 주문 취소
@@ -142,13 +123,9 @@ export class OrderService {
             }
         });
 
-        // 웹소켓 전송
-        // try {
-        //     await this.websocket.stockUpdate(order.accountId);
-        //     await this.websocket.accountUpdate(order.accountId);
-        //     await this.websocket.orderStatus(order.accountId);
-        // } catch (err) {
-        //     console.error('웹소켓 전송오류' + err);
-        // }
+        this.client.emit('order.evented', {
+            stockId: order.stockId,
+            updatedOrderIds: [order.id],
+        });
     }
 }
