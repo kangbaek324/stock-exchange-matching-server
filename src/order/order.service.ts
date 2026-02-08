@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Order, OrderStatus, OrderType, PrismaClient, TradingType } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
 import { OrderExecutionService } from './order-execution.service';
-import { MqData, OrderAction } from './type/mq-data.type';
+import { OrderAction, OrderCreatedData } from './type/order-created-data.type';
 import { BuyOrder } from './type/buy.type';
 import { CancelOrder } from './type/cancel.type';
 import { EditOrder } from './type/edit.type';
@@ -17,7 +17,7 @@ export class OrderService {
         private readonly orderExecutionService: OrderExecutionService,
     ) {}
 
-    async sendOrder(mqData: MqData) {
+    async sendOrder(mqData: OrderCreatedData) {
         if (mqData.type === OrderAction.buy) {
             return await this.trade(mqData.data, 'buy');
         } else if (mqData.type === OrderAction.sell) {
@@ -31,7 +31,7 @@ export class OrderService {
 
     // 매수, 매도
     async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
-        let updatedOrderIds: number[];
+        let updatedOrders: { id: number; accountId: number }[] = [];
 
         await this.prismaService.$transaction(async (tx: PrismaClient) => {
             const accountId = (
@@ -57,23 +57,22 @@ export class OrderService {
             });
 
             // 체결 가능 주문 탐색
-            updatedOrderIds = await this.orderExecutionService.processSubmitOrder(tx, submitOrder);
+            updatedOrders = await this.orderExecutionService.processSubmitOrder(tx, submitOrder);
         });
 
         this.client.emit('order.evented', {
             stockId: data.stockId,
-            updatedOrderIds: updatedOrderIds,
+            updatedOrders: updatedOrders,
         });
     }
 
-    // @TODO 정정시 주문시 체결가능한 주식 탐색 로직 필요
     // 주문 정정
     async edit(data: EditOrder) {
         let order: Order;
-        let updatedOrderIds: number[];
+        let updatedOrders: { id: number; accountId: number }[] = [];
 
         await this.prismaService.$transaction(async (tx: PrismaClient) => {
-            order = await this.prismaService.order.update({
+            order = await tx.order.update({
                 data: {
                     price: data.price,
                 },
@@ -82,12 +81,12 @@ export class OrderService {
                 },
             });
 
-            updatedOrderIds = await this.orderExecutionService.processSubmitOrder(tx, order);
+            updatedOrders = await this.orderExecutionService.processSubmitOrder(tx, order);
         });
 
         this.client.emit('order.evented', {
             stockId: order.stockId,
-            updatedOrderIds: updatedOrderIds,
+            updatedOrders: updatedOrders,
         });
     }
 
@@ -125,7 +124,7 @@ export class OrderService {
 
         this.client.emit('order.evented', {
             stockId: order.stockId,
-            updatedOrderIds: [order.id],
+            updatedOrders: [{ id: order.id, accountId: order.accountId }],
         });
     }
 }

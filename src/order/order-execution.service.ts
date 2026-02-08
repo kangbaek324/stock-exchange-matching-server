@@ -77,8 +77,11 @@ export class OrderExecutionService {
         let nextStockPrice: bigint;
         let createMatchList = [];
 
-        let updatedOrderIds: number[] = [];
-        updatedOrderIds.push(submitOrder.id);
+        let updatedOrders: { id: number; accountId: number }[] = [];
+        updatedOrders.push({
+            id: submitOrder.id,
+            accountId: submitOrder.accountId,
+        });
 
         // Update를 마지막에 한번만 하기 위해 정보를 메모리에 저장해두는 변수
         let userStockList: { update: number[] } = { update: [] }; // 업데이트 해야하는 accountId 저장
@@ -104,7 +107,10 @@ export class OrderExecutionService {
 
             // 체결할 주문이 있다면
             if (findOrder) {
-                updatedOrderIds.push(findOrder.id);
+                updatedOrders.push({
+                    id: findOrder.id,
+                    accountId: findOrder.accountId,
+                });
 
                 // 찾은 주문 메모리에 저장
                 if (!userStocks.get(findOrder.accountId)) {
@@ -257,6 +263,6 @@ export class OrderExecutionService {
             nextStockPrice,
         );
 
-        return updatedOrderIds;
+        return updatedOrders;
     }
 }
