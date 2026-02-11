@@ -57,7 +57,7 @@ export class OrderExecutionService {
         await tx.orderMatch.createMany({ data: createMatchList });
 
         // 계좌 잔고 업데이트
-        for (const accountId of userStockList.update) {
+        for (const accountId of [...new Set(userStockList.update)]) {
             await tx.userStock.update({
                 where: {
                     accountId_stockId: {
