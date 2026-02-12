@@ -1,8 +1,5 @@
 import { Order, OrderStatus, PrismaClient, UserStock } from '@prisma/client';
-import * as dayjs from 'dayjs';
-import * as utc from 'dayjs/plugin/utc';
-
-dayjs.extend(utc);
+import { getKstDate } from './get-kst-date';
 
 // 체결 가능한 수량 계산
 export function getRemaining(order: Order) {
@@ -74,6 +71,10 @@ export async function userStockDecrease(
                 },
             },
         });
+
+        // 이전 반복에서 update 리스트에 추가된 accountId 제거
+        userStockList.update = userStockList.update.filter((id) => id !== accountId);
+        userStocks.delete(accountId);
     } else {
         userStocks.set(accountId, {
             ...userStock,
@@ -144,69 +145,53 @@ export async function stockPriceUpdate(tx: PrismaClient, stockId: number, update
     });
 
     // 당일 날짜 조회 및 당일 가격 정보 조회
-    const today = dayjs().utc().format('YYYY-MM-DD');
-    const stockHistory = await tx.stockHistory.findUnique({
+    const today = getKstDate(0);
+    const stockHistory = await tx.stockHistory.upsert({
         where: {
             stockId_date: {
                 stockId: stockId,
-                date: new Date(today),
+                date: today,
             },
+        },
+        create: {
+            stockId: stockId,
+            date: today,
+            low: updatePrice,
+            high: updatePrice,
+            close: updatePrice,
+            open: updatePrice,
+        },
+        update: {
+            close: updatePrice,
         },
     });
 
-    // 당일 가격 정보 업데이트
-    if (!stockHistory) {
-        await tx.stockHistory.create({
-            data: {
-                stockId: stockId,
-                date: new Date(today),
-                low: updatePrice,
-                high: updatePrice,
-                close: updatePrice,
-                open: updatePrice,
-            },
-        });
-    } else {
-        // 당일 저가 업데이트
-        if (stockHistory.low > updatePrice) {
-            await tx.stockHistory.update({
-                where: {
-                    stockId_date: {
-                        stockId: stockId,
-                        date: new Date(today),
-                    },
-                },
-                data: {
-                    low: updatePrice,
-                },
-            });
-        }
-
-        // 당일 고가 업데이트
-        if (stockHistory.high < updatePrice) {
-            await tx.stockHistory.update({
-                where: {
-                    stockId_date: {
-                        stockId: stockId,
-                        date: new Date(today),
-                    },
-                },
-                data: {
-                    high: updatePrice,
-                },
-            });
-        }
-
-        // 당일 종가 업데이트
+    // 당일 저가 업데이트
+    if (stockHistory.low > updatePrice) {
         await tx.stockHistory.update({
             where: {
                 stockId_date: {
                     stockId: stockId,
-                    date: new Date(today),
+                    date: today,
                 },
             },
             data: {
-                close: updatePrice,
+                low: updatePrice,
+            },
+        });
+    }
+
+    // 당일 고가 업데이트
+    if (stockHistory.high < updatePrice) {
+        await tx.stockHistory.update({
+            where: {
+                stockId_date: {
+                    stockId: stockId,
+                    date: today,
+                },
+            },
+            data: {
+                high: updatePrice,
             },
         });
     }

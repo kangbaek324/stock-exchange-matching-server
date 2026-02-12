@@ -13,7 +13,7 @@ export const OrderAction = {
 
 export type OrderAction = (typeof OrderAction)[keyof typeof OrderAction];
 
-export type MqData =
+export type OrderCreatedData =
     | { type: typeof OrderAction.buy; data: BuyOrder; user: User; timestamp: number }
     | { type: typeof OrderAction.sell; data: SellOrder; user: User; timestamp: number }
     | { type: typeof OrderAction.cancel; data: CancelOrder; user: User; timestamp: number }
