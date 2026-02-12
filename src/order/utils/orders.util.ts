@@ -146,59 +146,28 @@ export async function stockPriceUpdate(tx: PrismaClient, stockId: number, update
 
     // 당일 날짜 조회 및 당일 가격 정보 조회
     const today = getKstDate(0);
-    const stockHistory = await tx.stockHistory.findUnique({
+    const stockHistory = await tx.stockHistory.upsert({
         where: {
             stockId_date: {
                 stockId: stockId,
                 date: today,
             },
         },
+        create: {
+            stockId: stockId,
+            date: today,
+            low: updatePrice,
+            high: updatePrice,
+            close: updatePrice,
+            open: updatePrice,
+        },
+        update: {
+            close: updatePrice,
+        },
     });
 
-    // 당일 가격 정보 업데이트
-    if (!stockHistory) {
-        await tx.stockHistory.create({
-            data: {
-                stockId: stockId,
-                date: today,
-                low: updatePrice,
-                high: updatePrice,
-                close: updatePrice,
-                open: updatePrice,
-            },
-        });
-    } else {
-        // 당일 저가 업데이트
-        if (stockHistory.low > updatePrice) {
-            await tx.stockHistory.update({
-                where: {
-                    stockId_date: {
-                        stockId: stockId,
-                        date: today,
-                    },
-                },
-                data: {
-                    low: updatePrice,
-                },
-            });
-        }
-
-        // 당일 고가 업데이트
-        if (stockHistory.high < updatePrice) {
-            await tx.stockHistory.update({
-                where: {
-                    stockId_date: {
-                        stockId: stockId,
-                        date: today,
-                    },
-                },
-                data: {
-                    high: updatePrice,
-                },
-            });
-        }
-
-        // 당일 종가 업데이트
+    // 당일 저가 업데이트
+    if (stockHistory.low > updatePrice) {
         await tx.stockHistory.update({
             where: {
                 stockId_date: {
@@ -207,7 +176,22 @@ export async function stockPriceUpdate(tx: PrismaClient, stockId: number, update
                 },
             },
             data: {
-                close: updatePrice,
+                low: updatePrice,
+            },
+        });
+    }
+
+    // 당일 고가 업데이트
+    if (stockHistory.high < updatePrice) {
+        await tx.stockHistory.update({
+            where: {
+                stockId_date: {
+                    stockId: stockId,
+                    date: today,
+                },
+            },
+            data: {
+                high: updatePrice,
             },
         });
     }
