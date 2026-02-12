@@ -34,12 +34,18 @@ export class OrderService {
         let updatedOrders: { id: number; accountId: number }[] = [];
 
         await this.prismaService.$transaction(async (tx: PrismaClient) => {
-            const accountId = (
-                await tx.account.findUnique({
-                    where: { accountNumber: data.accountNumber },
-                    select: { id: true },
-                })
-            ).id;
+            const account = await tx.account.findUnique({
+                where: { accountNumber: data.accountNumber },
+                select: { id: true },
+            });
+
+            // null 오류 추적용
+            if (!account || !account?.id) {
+                console.log(data);
+                console.log(tradingType);
+                console.log(account);
+            }
+            const accountId = account.id;
 
             // 시장가 주문일 경우 0원으로 통일
             if (data.orderType == OrderType.market) data.price = 0n;

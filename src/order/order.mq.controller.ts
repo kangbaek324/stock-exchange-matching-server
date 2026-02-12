@@ -16,6 +16,7 @@ export class OrderMqController {
             await this.orderService.sendOrder(mqData);
         } catch (err) {
             console.error(err);
+            console.log(mqData);
         } finally {
             channel.ack(originalMsg);
         }
