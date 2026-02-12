@@ -94,8 +94,8 @@ export class OrderService {
     async cancel(data: CancelOrder) {
         let order: Order;
 
-        await this.prismaService.$transaction(async () => {
-            order = await this.prismaService.order.update({
+        await this.prismaService.$transaction(async (tx: PrismaClient) => {
+            order = await tx.order.update({
                 data: {
                     status: OrderStatus.c,
                 },
@@ -106,7 +106,7 @@ export class OrderService {
 
             // 매도 주문일 경우 가능수량 수정
             if (order.tradingType == 'sell') {
-                await this.prismaService.userStock.update({
+                await tx.userStock.update({
                     where: {
                         accountId_stockId: {
                             stockId: order.stockId,

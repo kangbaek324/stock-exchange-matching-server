@@ -74,6 +74,7 @@ export async function userStockDecrease(
 
         // 이전 반복에서 update 리스트에 추가된 accountId 제거
         userStockList.update = userStockList.update.filter((id) => id !== accountId);
+        userStocks.delete(accountId);
     } else {
         userStocks.set(accountId, {
             ...userStock,
