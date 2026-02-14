@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Order, OrderStatus, PrismaClient, UserStock } from '@prisma/client';
-import { getKstDate } from '../utils/get-kst-date';
+import { getKstDate, getKstTimeNow } from '../utils/get-kst-date';
 
 @Injectable()
 export class OrderUtilService {
@@ -210,6 +210,7 @@ export class OrderUtilService {
             number: 0n,
             initialOrderId: findOrder.id,
             orderId: submitOrder.id,
+            matchedAt: getKstTimeNow(),
         };
 
         if (submitOrderNumber < findOrderNumber) orderMatch.number = submitOrderNumber;
