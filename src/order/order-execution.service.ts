@@ -7,12 +7,16 @@ import {
     TradingType,
     UserStock,
 } from '@prisma/client';
-import * as utils from './utils/orders.util';
-import { handleEqualMatch, handlePartialMatch } from './utils/handleMatch';
-import { handleRemainingMatch } from './utils/handleMatch';
+import { OrderUtilService } from './services/order-util.service';
+import { HandleMatchService } from './services/handle-match.service';
 
 @Injectable()
 export class OrderExecutionService {
+    constructor(
+        private readonly orderUtilService: OrderUtilService,
+        private readonly handleMatchService: HandleMatchService,
+    ) {}
+
     // 체결 가능 주문 탐색
     async findOrder(tx: PrismaClient, submitOrder: Order, tradingType: TradingType) {
         const stockId = submitOrder.stockId;
@@ -51,13 +55,14 @@ export class OrderExecutionService {
         nextStockPrice: bigint,
     ) {
         // 주식 가격 업데이트
-        await utils.stockPriceUpdate(tx, stockId, nextStockPrice);
+        await this.orderUtilService.stockPriceUpdate(tx, stockId, nextStockPrice);
 
         // 체결 로그 업데이트
         await tx.orderMatch.createMany({ data: createMatchList });
 
         // 계좌 잔고 업데이트
         for (const accountId of [...new Set(userStockList.update)]) {
+            const userStock = userStocks.get(accountId);
             await tx.userStock.update({
                 where: {
                     accountId_stockId: {
@@ -65,7 +70,12 @@ export class OrderExecutionService {
                         stockId: stockId,
                     },
                 },
-                data: userStocks.get(accountId),
+                data: {
+                    number: userStock.number,
+                    canNumber: userStock.canNumber,
+                    average: userStock.average,
+                    totalBuyAmount: userStock.totalBuyAmount,
+                },
             });
         }
     }
@@ -89,16 +99,16 @@ export class OrderExecutionService {
 
         // 메모리에 주문 계좌의 주식 보유 현황 저장
         if (!userStocks.get(submitOrder.accountId)) {
-            const userStockForSubmitOrder = await tx.userStock.findUnique({
-                where: {
-                    accountId_stockId: {
-                        accountId: submitOrder.accountId,
-                        stockId: stockId,
-                    },
-                },
-            });
+            const result = await tx.$queryRaw<UserStock[]>`
+                SELECT account_id AS accountId, stock_id AS stockId,
+                       number, can_number AS canNumber, average,
+                       total_buy_amount AS totalBuyAmount
+                FROM user_stocks
+                WHERE account_id = ${submitOrder.accountId} AND stock_id = ${stockId}
+                FOR UPDATE
+            `;
 
-            userStocks.set(submitOrder.accountId, userStockForSubmitOrder);
+            userStocks.set(submitOrder.accountId, result[0] ?? null);
         }
 
         while (true) {
@@ -114,27 +124,27 @@ export class OrderExecutionService {
 
                 // 찾은 주문 메모리에 저장
                 if (!userStocks.get(findOrder.accountId)) {
-                    const userStockForFindOrder = await tx.userStock.findUnique({
-                        where: {
-                            accountId_stockId: {
-                                accountId: findOrder.accountId,
-                                stockId: findOrder.stockId,
-                            },
-                        },
-                    });
+                    const result = await tx.$queryRaw<UserStock[]>`
+                        SELECT account_id AS accountId, stock_id AS stockId,
+                               number, can_number AS canNumber, average,
+                               total_buy_amount AS totalBuyAmount
+                        FROM user_stocks
+                        WHERE account_id = ${findOrder.accountId} AND stock_id = ${findOrder.stockId}
+                        FOR UPDATE
+                    `;
 
-                    userStocks.set(findOrder.accountId, userStockForFindOrder);
+                    userStocks.set(findOrder.accountId, result[0] ?? null);
                 }
 
                 // 체결 가능한 수량
-                const submitRemaining = utils.getRemaining(submitOrder);
-                const findRemaining = utils.getRemaining(findOrder);
+                const submitRemaining = this.orderUtilService.getRemaining(submitOrder);
+                const findRemaining = this.orderUtilService.getRemaining(findOrder);
 
                 // 체결
                 if (submitRemaining === findRemaining) {
                     const order = [findOrder, submitOrder];
 
-                    [userStockList, userStocks] = await handleEqualMatch(
+                    [userStockList, userStocks] = await this.handleMatchService.handleEqualMatch(
                         tx,
                         submitOrder,
                         findOrder,
@@ -145,9 +155,9 @@ export class OrderExecutionService {
                         userStocks,
                     );
 
-                    await utils.orderCompleteUpdate(tx, order);
+                    await this.orderUtilService.orderCompleteUpdate(tx, order);
                     createMatchList.push(
-                        utils.createOrderMatch(
+                        this.orderUtilService.createOrderMatch(
                             submitOrder,
                             findOrder,
                             submitRemaining,
@@ -160,20 +170,25 @@ export class OrderExecutionService {
                 } else if (submitRemaining < findRemaining) {
                     const order = [submitOrder];
 
-                    [userStockList, userStocks] = await handleRemainingMatch(
-                        tx,
-                        submitOrder,
-                        findOrder,
-                        tradingType,
-                        submitRemaining,
-                        userStockList,
-                        userStocks,
-                    );
+                    [userStockList, userStocks] =
+                        await this.handleMatchService.handleRemainingMatch(
+                            tx,
+                            submitOrder,
+                            findOrder,
+                            tradingType,
+                            submitRemaining,
+                            userStockList,
+                            userStocks,
+                        );
 
-                    await utils.orderCompleteUpdate(tx, order, submitOrder.number);
-                    await utils.orderMatchAndRemainderUpdate(tx, findOrder, submitOrder);
+                    await this.orderUtilService.orderCompleteUpdate(tx, order, submitOrder.number);
+                    await this.orderUtilService.orderMatchAndRemainderUpdate(
+                        tx,
+                        findOrder,
+                        submitOrder,
+                    );
                     createMatchList.push(
-                        utils.createOrderMatch(
+                        this.orderUtilService.createOrderMatch(
                             submitOrder,
                             findOrder,
                             submitRemaining,
@@ -185,7 +200,7 @@ export class OrderExecutionService {
 
                     break;
                 } else if (submitRemaining > findRemaining) {
-                    [userStockList, userStocks] = await handlePartialMatch(
+                    [userStockList, userStocks] = await this.handleMatchService.handlePartialMatch(
                         tx,
                         submitOrder,
                         findOrder,
@@ -196,7 +211,7 @@ export class OrderExecutionService {
                     );
 
                     createMatchList.push(
-                        utils.createOrderMatch(
+                        this.orderUtilService.createOrderMatch(
                             submitOrder,
                             findOrder,
                             submitRemaining,

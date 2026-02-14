@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { OrderExecutionService } from './order-execution.service';
+import { OrderUtilService } from './services/order-util.service';
+import { HandleMatchService } from './services/handle-match.service';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { OrderMqController } from './order.mq.controller';
 
@@ -22,6 +24,6 @@ import { OrderMqController } from './order.mq.controller';
         ]),
     ],
     controllers: [OrderMqController],
-    providers: [OrderService, OrderExecutionService],
+    providers: [OrderService, OrderExecutionService, OrderUtilService, HandleMatchService],
 })
 export class OrderModule {}

@@ -33,32 +33,68 @@ export class OrderService {
     async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
         let updatedOrders: { id: number; accountId: number }[] = [];
 
-        await this.prismaService.$transaction(async (tx: PrismaClient) => {
-            const accountId = (
-                await tx.account.findUnique({
-                    where: { accountNumber: data.accountNumber },
-                    select: { id: true },
-                })
-            ).id;
-
-            // 시장가 주문일 경우 0원으로 통일
-            if (data.orderType == OrderType.market) data.price = 0n;
-
-            // 주문 생성
-            const submitOrder = await tx.order.create({
-                data: {
-                    accountId: accountId,
-                    stockId: data.stockId,
-                    price: data.price,
-                    number: data.number,
-                    orderType: data.orderType,
-                    tradingType: tradingType,
-                },
-            });
-
-            // 체결 가능 주문 탐색
-            updatedOrders = await this.orderExecutionService.processSubmitOrder(tx, submitOrder);
+        const account = await this.prismaService.account.findUnique({
+            where: { accountNumber: data.accountNumber },
+            select: { id: true },
         });
+
+        try {
+            await this.prismaService.$transaction(async (tx: PrismaClient) => {
+                // null 오류 추적용
+                if (!account || !account?.id) {
+                    console.log(data);
+                    console.log(tradingType);
+                    console.log(account);
+                }
+                const accountId = account.id;
+
+                // 시장가 주문일 경우 0원으로 통일
+                if (data.orderType == OrderType.market) data.price = 0n;
+
+                // 주문 생성
+                const submitOrder = await tx.order.create({
+                    data: {
+                        accountId: accountId,
+                        stockId: data.stockId,
+                        price: data.price,
+                        number: data.number,
+                        orderType: data.orderType,
+                        tradingType: tradingType,
+                    },
+                });
+
+                // 체결 가능 주문 탐색
+                updatedOrders = await this.orderExecutionService.processSubmitOrder(
+                    tx,
+                    submitOrder,
+                );
+            });
+        } catch (err) {
+            console.error(err);
+
+            // 가능 수량 환불
+            if (tradingType === TradingType.sell) {
+                await this.prismaService.$transaction(async (tx: PrismaClient) => {
+                    await tx.$queryRaw`
+                    SELECT can_number FROM user_stocks 
+                    WHERE account_id = ${account.id} AND stock_id = ${data.stockId}
+                    FOR UPDATE
+                    `;
+
+                    await tx.userStock.update({
+                        where: {
+                            accountId_stockId: {
+                                accountId: account.id,
+                                stockId: data.stockId,
+                            },
+                        },
+                        data: {
+                            canNumber: { increment: data.number },
+                        },
+                    });
+                });
+            }
+        }
 
         this.client.emit('order.evented', {
             stockId: data.stockId,
