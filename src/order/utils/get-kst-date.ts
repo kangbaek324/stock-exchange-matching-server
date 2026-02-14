@@ -11,7 +11,6 @@ export function getKstDate(daysOffset: number = 0) {
 
 export function getKstTimeNow() {
     const now = new Date();
-    console.log(now);
     const kstStr = now.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' });
     return new Date(kstStr.replace(' ', 'T') + '.000Z');
 }
