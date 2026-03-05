@@ -10,8 +10,6 @@ import {
 } from '@prisma/client';
 import { OrderUtilService } from './services/order-util.service';
 import { HandleMatchService } from './services/handle-match.service';
-import { BuyOrder } from './type/buy.type';
-import { SellOrder } from './type/sell.type';
 
 @Injectable()
 export class OrderExecutionService {
@@ -103,8 +101,8 @@ export class OrderExecutionService {
         let userStocks = new Map<number, UserStock>(); // accountId, userStocks 객체
 
         // 메모리에 주문 계좌의 주식 보유 현황 저장
-        if (!userStocks.get(submitOrder.accountId)) {
-            const result = await tx.$queryRaw<UserStock[]>`
+        // 주식 보유 레코드 락
+        const rs = await tx.$queryRaw<UserStock[]>`
                 SELECT account_id AS accountId, stock_id AS stockId,
                        number, can_number AS canNumber, average,
                        total_buy_amount AS totalBuyAmount
@@ -113,22 +111,12 @@ export class OrderExecutionService {
                 FOR UPDATE
             `;
 
-            // 계좌 잠금
-            const account = await tx.$queryRaw<Account[]>`
-            SELECT id, user_id AS "userId", account_number AS "accountNumber",
-                money, created_at AS "createdAt"
-            FROM accounts
-            WHERE id = ${submitOrder.accountId}
-            FOR UPDATE`;
-
-            userStocks.set(submitOrder.accountId, result[0] ?? null);
-        }
+        userStocks.set(submitOrder.accountId, rs[0] ?? null);
 
         while (true) {
             // 체결할 주문 찾기
             let findOrder = await this.findOrder(tx, submitOrder, tradingType);
 
-            // 체결할 주문이 있다면
             if (findOrder) {
                 updatedOrders.push({
                     id: findOrder.id,
@@ -145,13 +133,6 @@ export class OrderExecutionService {
                         WHERE account_id = ${findOrder.accountId} AND stock_id = ${findOrder.stockId}
                         FOR UPDATE
                     `;
-
-                    const account = await tx.$queryRaw<Account[]>`
-                    SELECT id, user_id AS "userId", account_number AS "accountNumber",
-                        money, created_at AS "createdAt"
-                    FROM accounts
-                    WHERE id = ${findOrder.accountId}
-                    FOR UPDATE`;
 
                     userStocks.set(findOrder.accountId, result[0] ?? null);
                 }
@@ -178,6 +159,7 @@ export class OrderExecutionService {
                         );
 
                     await this.orderUtilService.orderCompleteUpdate(tx, order);
+
                     createMatchList.push(
                         this.orderUtilService.createOrderMatch(
                             submitOrder,
@@ -186,6 +168,8 @@ export class OrderExecutionService {
                             findRemaining,
                         ),
                     );
+
+                    submitOrder.matchNumber = submitOrder.number;
                     nextStockPrice = findOrder.price;
                     totalExecutedAmount += executedAmount;
 
@@ -206,6 +190,7 @@ export class OrderExecutionService {
                         );
 
                     await this.orderUtilService.orderCompleteUpdate(tx, order, submitOrder.number);
+
                     await this.orderUtilService.orderMatchAndRemainderUpdate(
                         tx,
                         findOrder,
@@ -220,6 +205,7 @@ export class OrderExecutionService {
                         ),
                     );
 
+                    submitOrder.matchNumber = submitOrder.number;
                     nextStockPrice = findOrder.price;
                     totalExecutedAmount += executedAmount;
 
@@ -259,6 +245,7 @@ export class OrderExecutionService {
                 if (!nextStockPrice) {
                     const stock = await tx.stock.findUnique({
                         where: { id: stockId },
+                        select: { price: true },
                     });
 
                     nextStockPrice = stock.price;
@@ -269,6 +256,7 @@ export class OrderExecutionService {
                     submitOrder.number !== submitOrder.matchNumber &&
                     submitOrder.orderType == OrderType.market
                 ) {
+                    // 주문 취소 처리
                     await tx.order.update({
                         where: { id: submitOrder.id },
                         data: {
@@ -276,6 +264,7 @@ export class OrderExecutionService {
                         },
                     });
 
+                    // 미체결 수량 환불
                     if (submitOrder.tradingType === TradingType.sell) {
                         await tx.userStock.update({
                             where: {
@@ -290,20 +279,51 @@ export class OrderExecutionService {
                                 },
                             },
                         });
+                    } else if (submitOrder.tradingType === TradingType.buy) {
+                        await tx.account.update({
+                            where: {
+                                id: submitOrder.accountId,
+                            },
+                            data: {
+                                canMoney: {
+                                    increment: lockedBalance - totalExecutedAmount,
+                                },
+                            },
+                        });
                     }
+                } else if (
+                    // 비싼 가격에 지정가 매수 주문을 한 경우 (부분 체결)
+                    submitOrder.number !== submitOrder.matchNumber &&
+                    submitOrder.orderType == OrderType.limit &&
+                    tradingType === TradingType.buy
+                ) {
+                    await tx.account.update({
+                        where: {
+                            id: submitOrder.accountId,
+                        },
+                        data: {
+                            canMoney: {
+                                increment:
+                                    lockedBalance -
+                                    (totalExecutedAmount +
+                                        submitOrder.price *
+                                            (submitOrder.number - submitOrder.matchNumber)),
+                            },
+                        },
+                    });
                 }
-
                 break;
             }
         }
 
+        // 비싼 가격에 지정가 매수 주문을 한 경우 (완전 체결)
         // 잠근 금액과 실 체결 금액이 다른경우 환불
         if (
             tradingType === TradingType.buy &&
             lockedBalance !== totalExecutedAmount &&
-            totalExecutedAmount !== 0n
+            submitOrder.matchNumber === submitOrder.number
         ) {
-            const rs = await tx.account.update({
+            await tx.account.update({
                 where: {
                     id: submitOrder.accountId,
                 },
@@ -313,8 +333,6 @@ export class OrderExecutionService {
                     },
                 },
             });
-
-            if (rs.money < rs.canMoney) throw Error('가능 예수금이 예수금보다 큽니다.');
         }
 
         // 후처리

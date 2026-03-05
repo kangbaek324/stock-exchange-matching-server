@@ -98,7 +98,7 @@ model UserStock {
   number         BigInt
   canNumber      BigInt @map("can_number")
   average        BigInt
-  totalBuyAmount BigInt @default(0) @map("total_buy_amount")
+  totalBuyAmount BigInt @map("total_buy_amount")
 
   accounts Account @relation("UserStocksToAccounts", fields: [accountId], references: [id])
   stocks   Stock   @relation("UserStocksToStocks", fields: [stockId], references: [id])
@@ -113,7 +113,7 @@ model Order {
   stockId     Int          @map("stock_id")
   price       BigInt
   number      BigInt
-  matchNumber BigInt?      @default(0) @map("match_number")
+  matchNumber BigInt       @map("match_number")
   orderType   OrderType    @map("order_type")
   status      OrderStatus? @default(n)
   tradingType TradingType  @map("trading_type")
