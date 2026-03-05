@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+    Account,
     Order,
     OrderStatus,
     OrderType,
@@ -9,6 +10,8 @@ import {
 } from '@prisma/client';
 import { OrderUtilService } from './services/order-util.service';
 import { HandleMatchService } from './services/handle-match.service';
+import { BuyOrder } from './type/buy.type';
+import { SellOrder } from './type/sell.type';
 
 @Injectable()
 export class OrderExecutionService {
@@ -80,9 +83,11 @@ export class OrderExecutionService {
         }
     }
 
-    async processSubmitOrder(tx: PrismaClient, submitOrder: Order) {
+    async processSubmitOrder(tx: PrismaClient, submitOrder: Order, lockedBalance?: bigint) {
         const stockId = submitOrder.stockId;
         const tradingType = submitOrder.tradingType;
+
+        let totalExecutedAmount = 0n;
 
         let nextStockPrice: bigint;
         let createMatchList = [];
@@ -107,6 +112,14 @@ export class OrderExecutionService {
                 WHERE account_id = ${submitOrder.accountId} AND stock_id = ${stockId}
                 FOR UPDATE
             `;
+
+            // 계좌 잠금
+            const account = await tx.$queryRaw<Account[]>`
+            SELECT id, user_id AS "userId", account_number AS "accountNumber",
+                money, created_at AS "createdAt"
+            FROM accounts
+            WHERE id = ${submitOrder.accountId}
+            FOR UPDATE`;
 
             userStocks.set(submitOrder.accountId, result[0] ?? null);
         }
@@ -133,6 +146,13 @@ export class OrderExecutionService {
                         FOR UPDATE
                     `;
 
+                    const account = await tx.$queryRaw<Account[]>`
+                    SELECT id, user_id AS "userId", account_number AS "accountNumber",
+                        money, created_at AS "createdAt"
+                    FROM accounts
+                    WHERE id = ${findOrder.accountId}
+                    FOR UPDATE`;
+
                     userStocks.set(findOrder.accountId, result[0] ?? null);
                 }
 
@@ -143,17 +163,19 @@ export class OrderExecutionService {
                 // 체결
                 if (submitRemaining === findRemaining) {
                     const order = [findOrder, submitOrder];
+                    let executedAmount = 0n;
 
-                    [userStockList, userStocks] = await this.handleMatchService.handleEqualMatch(
-                        tx,
-                        submitOrder,
-                        findOrder,
-                        tradingType,
-                        submitRemaining,
-                        findRemaining,
-                        userStockList,
-                        userStocks,
-                    );
+                    [userStockList, userStocks, executedAmount] =
+                        await this.handleMatchService.handleEqualMatch(
+                            tx,
+                            submitOrder,
+                            findOrder,
+                            tradingType,
+                            submitRemaining,
+                            findRemaining,
+                            userStockList,
+                            userStocks,
+                        );
 
                     await this.orderUtilService.orderCompleteUpdate(tx, order);
                     createMatchList.push(
@@ -165,12 +187,14 @@ export class OrderExecutionService {
                         ),
                     );
                     nextStockPrice = findOrder.price;
+                    totalExecutedAmount += executedAmount;
 
                     break;
                 } else if (submitRemaining < findRemaining) {
                     const order = [submitOrder];
+                    let executedAmount = 0n;
 
-                    [userStockList, userStocks] =
+                    [userStockList, userStocks, executedAmount] =
                         await this.handleMatchService.handleRemainingMatch(
                             tx,
                             submitOrder,
@@ -197,18 +221,22 @@ export class OrderExecutionService {
                     );
 
                     nextStockPrice = findOrder.price;
+                    totalExecutedAmount += executedAmount;
 
                     break;
                 } else if (submitRemaining > findRemaining) {
-                    [userStockList, userStocks] = await this.handleMatchService.handlePartialMatch(
-                        tx,
-                        submitOrder,
-                        findOrder,
-                        tradingType,
-                        findRemaining,
-                        userStockList,
-                        userStocks,
-                    );
+                    let executedAmount = 0n;
+
+                    [userStockList, userStocks, executedAmount] =
+                        await this.handleMatchService.handlePartialMatch(
+                            tx,
+                            submitOrder,
+                            findOrder,
+                            tradingType,
+                            findRemaining,
+                            userStockList,
+                            userStocks,
+                        );
 
                     createMatchList.push(
                         this.orderUtilService.createOrderMatch(
@@ -219,6 +247,7 @@ export class OrderExecutionService {
                         ),
                     );
                     nextStockPrice = findOrder.price;
+                    totalExecutedAmount += executedAmount;
 
                     submitOrder.matchNumber =
                         submitOrder.matchNumber + (findOrder.number - findOrder.matchNumber);
@@ -266,6 +295,26 @@ export class OrderExecutionService {
 
                 break;
             }
+        }
+
+        // 잠근 금액과 실 체결 금액이 다른경우 환불
+        if (
+            tradingType === TradingType.buy &&
+            lockedBalance !== totalExecutedAmount &&
+            totalExecutedAmount !== 0n
+        ) {
+            const rs = await tx.account.update({
+                where: {
+                    id: submitOrder.accountId,
+                },
+                data: {
+                    canMoney: {
+                        increment: lockedBalance - totalExecutedAmount,
+                    },
+                },
+            });
+
+            if (rs.money < rs.canMoney) throw Error('가능 예수금이 예수금보다 큽니다.');
         }
 
         // 후처리
