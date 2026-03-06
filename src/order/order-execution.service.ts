@@ -4,6 +4,7 @@ import {
     Order,
     OrderStatus,
     OrderType,
+    Prisma,
     PrismaClient,
     TradingType,
     UserStock,
@@ -11,6 +12,7 @@ import {
 import { OrderUtilService } from './services/order-util.service';
 import { HandleMatchService } from './services/handle-match.service';
 
+// 만약 Account를 조회해서 직접 연산하는 코드가 필요하다면 Account 락이 필요함
 @Injectable()
 export class OrderExecutionService {
     constructor(
@@ -23,27 +25,34 @@ export class OrderExecutionService {
         const stockId = submitOrder.stockId;
         const orderType = submitOrder.orderType;
         const price = submitOrder.price;
+        const oppositeTradingType =
+            tradingType === TradingType.buy ? TradingType.sell : TradingType.buy;
 
-        let where = {
-            stockId: stockId,
-            tradingType: tradingType === TradingType.buy ? TradingType.sell : TradingType.buy,
-            status: OrderStatus.n,
-            price: {},
-        };
+        const priceFilter =
+            orderType === OrderType.limit
+                ? tradingType === TradingType.buy
+                    ? Prisma.sql`AND price <= ${price}`
+                    : Prisma.sql`AND price >= ${price}`
+                : Prisma.sql``;
 
-        if (orderType === OrderType.limit) {
-            if (tradingType === TradingType.buy) where.price = { lte: price };
-            else if (tradingType === TradingType.sell) where.price = { gte: price };
-        }
+        const priceOrder = Prisma.raw(tradingType === TradingType.buy ? 'ASC' : 'DESC');
 
-        return await tx.order.findFirst({
-            where,
-            orderBy: [
-                { price: tradingType === TradingType.buy ? 'asc' : 'desc' },
-                { createdAt: 'asc' },
-            ],
-            take: 1,
-        });
+        const result = await tx.$queryRaw<Order[]>(Prisma.sql`
+            SELECT id, account_id AS "accountId", stock_id AS "stockId",
+                   price, number, match_number AS "matchNumber",
+                   order_type AS "orderType", status, trading_type AS "tradingType",
+                   created_at AS "createdAt"
+            FROM orders
+            WHERE stock_id = ${stockId}
+              AND trading_type = ${oppositeTradingType}
+              AND status = ${OrderStatus.n}
+              ${priceFilter}
+            ORDER BY price ${priceOrder}, created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        `);
+
+        return result[0] ?? null;
     }
 
     // 체결이 끝난후 후 처리
