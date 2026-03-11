@@ -349,6 +349,6 @@ export class OrderExecutionService {
             nextStockPrice,
         );
 
-        return updatedOrders;
+        return { updatedOrders, nextStockPrice };
     }
 }
