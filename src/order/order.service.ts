@@ -8,8 +8,8 @@ import { CancelOrder } from './type/cancel.type';
 import { EditOrder } from './type/edit.type';
 import { SellOrder } from './type/sell.type';
 import { ClientProxy } from '@nestjs/microservices';
+import { orderSerializer } from './utils/order-serializer';
 
-// @TODO UpdateOrders를 값을 바로 전달해주기
 @Injectable()
 export class OrderService {
     constructor(
@@ -32,7 +32,7 @@ export class OrderService {
 
     // 매수, 매도
     async trade(data: BuyOrder | SellOrder, tradingType: TradingType) {
-        let updatedOrders: { id: number; accountId: number }[] = [];
+        let rs: { updatedOrders: Order[]; nextStockPrice: bigint };
 
         const account = await this.prismaService.account.findUnique({
             where: { accountNumber: data.accountNumber },
@@ -61,16 +61,13 @@ export class OrderService {
 
                 // 체결 가능 주문 탐색
                 if (tradingType === TradingType.buy) {
-                    updatedOrders = await this.orderExecutionService.processSubmitOrder(
+                    rs = await this.orderExecutionService.processSubmitOrder(
                         tx,
                         submitOrder,
                         BigInt((data as BuyOrder).lockedBalance),
                     );
                 } else {
-                    updatedOrders = await this.orderExecutionService.processSubmitOrder(
-                        tx,
-                        submitOrder,
-                    );
+                    rs = await this.orderExecutionService.processSubmitOrder(tx, submitOrder);
                 }
             });
         } catch (err) {
@@ -105,15 +102,19 @@ export class OrderService {
         }
 
         this.client.emit('order.evented', {
-            stockId: data.stockId,
-            updatedOrders: updatedOrders,
+            type: tradingType,
+            stock: {
+                id: data.stockId,
+                nextPrice: rs.nextStockPrice,
+            },
+            updatedOrders: orderSerializer(rs.updatedOrders),
         });
     }
 
     // 주문 정정
     async edit(data: EditOrder) {
+        let rs: { updatedOrders: Order[]; nextStockPrice: bigint };
         let order: Order;
-        let updatedOrders: { id: number; accountId: number }[] = [];
         let isAlreadyProcessed = false;
 
         await this.prismaService.$transaction(async (tx: PrismaClient) => {
@@ -143,11 +144,7 @@ export class OrderService {
 
             const lockedBalance = (order.number - order.matchNumber) * order.price;
 
-            updatedOrders = await this.orderExecutionService.processSubmitOrder(
-                tx,
-                order,
-                lockedBalance,
-            );
+            rs = await this.orderExecutionService.processSubmitOrder(tx, order, lockedBalance);
         });
 
         if (isAlreadyProcessed) {
@@ -158,13 +155,18 @@ export class OrderService {
         }
 
         this.client.emit('order.evented', {
-            stockId: order.stockId,
-            updatedOrders: updatedOrders,
+            type: 'edit',
+            stock: {
+                id: order.stockId,
+                nextPrice: rs.nextStockPrice,
+            },
+            updatedOrders: orderSerializer(rs.updatedOrders),
         });
     }
 
     // 주문 취소
     async cancel(data: CancelOrder) {
+        let rs: { updatedOrders: Order[]; nextStockPrice: bigint };
         let order: Order;
         let isAlreadyProcessed = false;
 
@@ -192,6 +194,7 @@ export class OrderService {
                     id: data.orderId,
                 },
             });
+            rs.updatedOrders.push(order);
 
             // 매도 주문일 경우 가능수량 수정
             if (order.tradingType == 'sell') {
@@ -230,8 +233,12 @@ export class OrderService {
         }
 
         this.client.emit('order.evented', {
-            stockId: order.stockId,
-            updatedOrders: [{ id: order.id, accountId: order.accountId }],
+            type: 'cancel',
+            stock: {
+                id: order.stockId,
+                nextPrice: rs.nextStockPrice,
+            },
+            updatedOrders: orderSerializer(rs.updatedOrders),
         });
     }
 }
