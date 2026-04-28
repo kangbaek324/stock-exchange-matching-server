@@ -1,98 +1,85 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Kronex Matching Server
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+개발기간: 2025년 6월 ~ 2026년 3월
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+개발인원: 1인 개발
 
-## Description
+> Kronex 모의 주식 거래소의 주문 매칭 서버입니다.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Flow
 
-## Project setup
+RabbitMQ에서 주문 메시지 수신 → 주문 유형에 따라 처리 (매수/매도/정정/취소) → DB 트랜잭션 내 매칭 엔진 실행 → 체결 결과를 RabbitMQ로 발행
 
-```bash
-$ npm install
-```
+## Architecture
 
-## Compile and run the project
+- System
 
-```bash
-# development
-$ npm run start
+    <img width="921" height="425" alt="image(3)" src="https://github.com/user-attachments/assets/895e4dfd-9038-4281-be77-3363866a24ce" />
 
-# watch mode
-$ npm run start:dev
+- ERD
 
-# production mode
-$ npm run start:prod
-```
+    <img width="872" height="975" alt="image(4)" src="https://github.com/user-attachments/assets/a3659c97-4f8a-403a-8aed-2a879bd02bcf" />
 
-## Run tests
+## Matching Engine
 
-```bash
-# unit tests
-$ npm run test
+주문이 수신되면 반대편 주문을 탐색하여 아래 세 가지 케이스로 체결합니다.
 
-# e2e tests
-$ npm run test:e2e
+| 케이스          | 설명                                                                         |
+| --------------- | ---------------------------------------------------------------------------- |
+| Equal Match     | 제출 주문과 상대 주문의 수량이 동일 → 양쪽 완전 체결                         |
+| Remaining Match | 제출 주문 수량 < 상대 주문 수량 → 제출 주문 완전 체결, 상대 주문 부분 체결   |
+| Partial Match   | 제출 주문 수량 > 상대 주문 수량 → 상대 주문 완전 체결 후 다음 주문 탐색 반복 |
 
-# test coverage
-$ npm run test:cov
-```
+- 지정가 매수: 주문 가격 이하의 매도 주문 중 가장 낮은 가격 순으로 체결
+- 지정가 매도: 주문 가격 이상의 매수 주문 중 가장 높은 가격 순으로 체결
+- 시장가: 가격 조건 없이 즉시 체결, 미체결 수량은 자동 취소
 
-## Deployment
+## Stack
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+- Language: TypeScript
+- Framework: NestJS
+- Database: MySQL (Prisma ORM)
+- Message Queue: RabbitMQ
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- MySQL
+- RabbitMQ
+
+### Installation
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+git clone https://github.com/kangbaek324/stock-exchange-matching-server.git
+cd stock-exchange-matching-server
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Environment Variables
 
-## Resources
+루트 디렉토리에 `.env` 파일을 생성하고 아래 변수를 설정하세요.
 
-Check out a few resources that may come in handy when working with NestJS:
+```env
+SERVER_PORT=
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+DATABASE_URL=mysql://USER:PASSWORD@HOST:PORT/DB_NAME
 
-## Support
+RABBITMQ_URL=amqp://USER:PASSWORD@HOST:PORT
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Run
 
-## Stay in touch
+```bash
+# 개발 모드
+npm run start:dev
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# 프로덕션
+npm run build
+npm run start:prod
+```
 
-## License
+## Repository
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Backend Server <a href="https://github.com/KRONEX-Stock-Exchange/stock-exchange-backend">here</a>
